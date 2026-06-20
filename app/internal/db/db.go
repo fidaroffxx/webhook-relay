@@ -5,6 +5,7 @@ import (
 	"log"
 
 	"github.com/lib/pq"
+	"github.com/sirupsen/logrus"
 )
 
 type DB struct {
@@ -30,8 +31,16 @@ func NewDB(config *Config) *DB {
 
 	err = db.Ping()
 	if err != nil {
-		log.Fatalf("%v - ошибка при подключении к  базе", err)
+		log.Fatalf("%v - ошибка при подключении к базе", err)
 	}
+
+	logrus.Infof(
+		"Connected to PostgreSQL at %s:%d db=%s user=%s",
+		config.GetHost(),
+		config.GetPort(),
+		config.GetName(),
+		config.GetUser(),
+	)
 
 	return &DB{
 		DB: db,

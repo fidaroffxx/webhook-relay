@@ -12,6 +12,8 @@ type Collection struct {
 }
 
 func NewCollection(collection *service.Collection) *Collection {
+	baseController := base.NewBaseController()
+
 	return &Collection{
 		StatusController: NewController(collection.GetStatusService()),
 	}

@@ -3,6 +3,12 @@ package kernel
 import (
 	"context"
 	"errors"
+	"log"
+	"net/http"
+	"os/signal"
+	"syscall"
+	"time"
+
 	"github.com/fidaroffxx/webhook-relay/internal/config"
 	"github.com/fidaroffxx/webhook-relay/internal/db"
 	"github.com/fidaroffxx/webhook-relay/internal/handlers"
@@ -11,11 +17,6 @@ import (
 	"github.com/fidaroffxx/webhook-relay/internal/repository"
 	"github.com/fidaroffxx/webhook-relay/internal/server"
 	"github.com/fidaroffxx/webhook-relay/internal/service"
-	"log"
-	"net/http"
-	"os/signal"
-	"syscall"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -53,7 +54,7 @@ func (k *Kernel) Load() error {
 	k.services = service.NewServiceCollection(k.repos)
 	k.handlers = handlers.NewCollection(k.services)
 	k.middlewares = middleware.NewCollection()
-	k.integration = integration.NewCollection()
+	k.integration = integration.NewCollection(k.configs)
 	k.router = server.NewRouter(k.handlers, k.middlewares)
 	k.serve = server.NewServer(k.configs.HTTP, k.router)
 
@@ -85,6 +86,11 @@ func (k *Kernel) Serve() {
 		err = k.db.DB.Close()
 		if err != nil {
 			log.Printf("Error closing database connection: %v", err)
+		}
+
+		err = k.integration.GetKafka().Close()
+		if err != nil {
+			log.Printf("Error closing kafka connection: %v", err)
 		}
 	})
 
