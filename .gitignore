@@ -1,0 +1,6 @@
+.env
+data/events/
+data/deliveries/
+/bin/
+*.exe
+PLAN.md
