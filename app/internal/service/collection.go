@@ -1,19 +1,45 @@
 package service
 
 import (
+	"github.com/fidaroffxx/webhook-relay/internal/integration"
 	"github.com/fidaroffxx/webhook-relay/internal/repository"
 )
 
 type Collection struct {
-	statusService StatusService
+	eventsService       EventsService
+	subscriptionService SubscriptionService
+	outboxService       OutboxService
 }
 
-func NewServiceCollection(repositories *repository.Collection) *Collection {
+func NewServiceCollection(
+	repositories *repository.Collection,
+	integration *integration.Collection,
+) *Collection {
 	return &Collection{
-		statusService: NewStatusService(repositories.GetStatusRepository()),
+		eventsService: NewEventsService(
+			repositories.GetEventsRepository(),
+			repositories.GetSubscriptionRepository(),
+		),
+
+		subscriptionService: NewSubscriptionService(
+			repositories.GetSubscriptionRepository(),
+		),
+
+		outboxService: NewOutboxService(
+			repositories.GetOutboxRepository(),
+			integration.GetKafka(),
+		),
 	}
 }
 
-func (c *Collection) GetStatusService() StatusService {
-	return c.statusService
+func (c *Collection) GetEventsService() EventsService {
+	return c.eventsService
+}
+
+func (c *Collection) GetSubscriptionService() SubscriptionService {
+	return c.subscriptionService
+}
+
+func (c *Collection) GetOutboxService() OutboxService {
+	return c.outboxService
 }

@@ -5,15 +5,27 @@ import (
 )
 
 type Collection struct {
-	statusRepository StatusRepository
+	subscriptionRepository SubscriptionRepository
+	eventsRepository       EventsRepository
+	outboxRepository       OutboxRepository
 }
 
 func NewRepositoryCollection(db *db.DB) *Collection {
 	return &Collection{
-		statusRepository: NewStatusRepository(db),
+		subscriptionRepository: NewSubscriptionRepository(db),
+		eventsRepository:       NewEventsRepository(db),
+		outboxRepository:       NewOutboxRepository(db),
 	}
 }
 
-func (c *Collection) GetStatusRepository() StatusRepository {
-	return c.statusRepository
+func (c *Collection) GetSubscriptionRepository() SubscriptionRepository {
+	return c.subscriptionRepository
+}
+
+func (c *Collection) GetEventsRepository() EventsRepository {
+	return c.eventsRepository
+}
+
+func (c *Collection) GetOutboxRepository() OutboxRepository {
+	return c.outboxRepository
 }

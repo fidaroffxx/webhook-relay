@@ -9,7 +9,7 @@ import (
 )
 
 type DB struct {
-	DB *sql.DB
+	*sql.DB
 }
 
 func NewDB(config *Config) *DB {
