@@ -15,12 +15,29 @@ type processedEventsRepository struct {
 type ProcessedEventsRepository interface {
 	IsDone(ctx context.Context, topic, eventId string) (bool, error)
 	MarkDone(ctx context.Context, topic, eventId string) error
+	Create(ctx context.Context, eventId, topic string) (string, error)
 }
 
 func NewProcessedEventsRepository(db *db.DB) ProcessedEventsRepository {
 	return &processedEventsRepository{
 		db,
 	}
+}
+
+func (r *processedEventsRepository) Create(ctx context.Context, eventId, topic string) (string, error) {
+	var processingEventId string
+
+	err := r.DB.QueryRowContext(
+		ctx,
+		"INSERT INTO processed_events(event_id, topic) VALUES ($1, $2) ON CONFLICT (topic, event_id) DO NOTHING RETURNING event_id",
+		eventId,
+		topic,
+	).Scan(&processingEventId)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", err
+	}
+
+	return processingEventId, nil
 }
 
 func (r *processedEventsRepository) IsDone(ctx context.Context, topic, eventId string) (bool, error) {

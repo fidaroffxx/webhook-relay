@@ -2,7 +2,6 @@ package db
 
 import (
 	"database/sql"
-	"log"
 
 	"github.com/lib/pq"
 	"github.com/sirupsen/logrus"
@@ -24,14 +23,14 @@ func NewDB(config *Config) *DB {
 
 	c, err := pq.NewConnectorConfig(cfg)
 	if err != nil {
-		log.Fatal(err)
+		logrus.Fatal(err)
 	}
 
 	db := sql.OpenDB(c)
 
 	err = db.Ping()
 	if err != nil {
-		log.Fatalf("%v - ошибка при подключении к базе", err)
+		logrus.Fatalf("%v - ошибка при подключении к базе", err)
 	}
 
 	logrus.Infof(

@@ -5,16 +5,18 @@ import (
 )
 
 type Collection struct {
-	subscriptionRepository SubscriptionRepository
-	eventsRepository       EventsRepository
-	outboxRepository       OutboxRepository
+	subscriptionRepository    SubscriptionRepository
+	eventsRepository          EventsRepository
+	outboxRepository          OutboxRepository
+	processedEventsRepository ProcessedEventsRepository
 }
 
 func NewRepositoryCollection(db *db.DB) *Collection {
 	return &Collection{
-		subscriptionRepository: NewSubscriptionRepository(db),
-		eventsRepository:       NewEventsRepository(db),
-		outboxRepository:       NewOutboxRepository(db),
+		subscriptionRepository:    NewSubscriptionRepository(db),
+		eventsRepository:          NewEventsRepository(db),
+		outboxRepository:          NewOutboxRepository(db),
+		processedEventsRepository: NewProcessedEventsRepository(db),
 	}
 }
 
@@ -28,4 +30,8 @@ func (c *Collection) GetEventsRepository() EventsRepository {
 
 func (c *Collection) GetOutboxRepository() OutboxRepository {
 	return c.outboxRepository
+}
+
+func (c *Collection) GetProcessedEventsRepository() ProcessedEventsRepository {
+	return c.processedEventsRepository
 }

@@ -10,7 +10,7 @@ import (
 )
 
 type EventsService interface {
-	Create(ctx context.Context, event *dto.CreateEventRequestDto) error
+	Create(ctx context.Context, event *dto.CreateEventRequestDto) (string, error)
 }
 
 type eventsService struct {
@@ -28,20 +28,21 @@ func NewEventsService(
 	}
 }
 
-func (s *eventsService) Create(ctx context.Context, event *dto.CreateEventRequestDto) error {
+func (s *eventsService) Create(ctx context.Context, event *dto.CreateEventRequestDto) (string, error) {
 	if err := s.validateSubscription(ctx, event.SubscriptionID); err != nil {
-		return err
+		return "0", err
 	}
 
-	if err := s.eventRepository.Create(ctx, &model.Event{
+	eventId, err := s.eventRepository.Create(ctx, &model.Event{
 		SubscriptionID: event.SubscriptionID,
 		EventType:      event.EventType,
 		Payload:        event.Payload,
-	}); err != nil {
-		return err
+	})
+	if err != nil {
+		return "", err
 	}
 
-	return nil
+	return eventId, nil
 }
 
 func (s *eventsService) validateSubscription(ctx context.Context, subscriptionID int64) error {

@@ -3,7 +3,7 @@ package integration
 import "github.com/fidaroffxx/webhook-relay/internal/config"
 
 type Collection struct {
-	kafka *Kafka
+	kafka KafkaIntegration
 }
 
 func NewCollection(config *config.Config) *Collection {
@@ -12,6 +12,6 @@ func NewCollection(config *config.Config) *Collection {
 	}
 }
 
-func (c *Collection) GetKafka() *Kafka {
+func (c *Collection) GetKafka() KafkaIntegration {
 	return c.kafka
 }

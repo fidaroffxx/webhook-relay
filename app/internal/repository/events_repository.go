@@ -16,7 +16,9 @@ type eventsRepository struct {
 }
 
 type EventsRepository interface {
-	Create(ctx context.Context, event *model.Event) error
+	Create(ctx context.Context, event *model.Event) (eventId string, err error)
+	MarkDone(ctx context.Context, id string) error
+	Get(ctx context.Context, eventId string) (event *model.Event, err error)
 }
 
 func NewEventsRepository(db *db.DB) EventsRepository {
@@ -25,13 +27,49 @@ func NewEventsRepository(db *db.DB) EventsRepository {
 	}
 }
 
+func (r *eventsRepository) MarkDone(ctx context.Context, id string) error {
+	_, err := r.DB.ExecContext(
+		ctx,
+		"UPDATE events SET status = 'done' where id = $1",
+		id,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *eventsRepository) Get(ctx context.Context, eventId string) (*model.Event, error) {
+	result := model.Event{}
+
+	err := r.DB.QueryRowContext(
+		ctx,
+		"SELECT id, subscriptions_id, event_type, payload, status, created_at, delivery_at FROM events where id = $1",
+		eventId,
+	).Scan(
+		&result.ID,
+		&result.SubscriptionID,
+		&result.EventType,
+		&result.Payload,
+		&result.Status,
+		&result.CreatedAt,
+		&result.DeliveredAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	return &result, nil
+}
+
 func (r *eventsRepository) Create(
 	ctx context.Context,
 	event *model.Event,
-) (err error) {
+) (eventId string, err error) {
 	tx, err := r.DB.BeginTx(ctx, nil)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	defer func() {
@@ -57,7 +95,7 @@ func (r *eventsRepository) Create(
 		newStatus,
 	).Scan(&event.ID)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	_, err = tx.ExecContext(
@@ -66,8 +104,8 @@ func (r *eventsRepository) Create(
 		event.ID,
 	)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return event.ID, nil
 }

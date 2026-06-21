@@ -1,6 +1,7 @@
 package model
 
 import (
+	"database/sql"
 	"encoding/json"
 	"time"
 )
@@ -11,7 +12,7 @@ type Event struct {
 	EventType      string          `json:"event_type"`
 	Payload        json.RawMessage `json:"payload"`
 
-	Status      string    `json:"status"`
-	CreatedAt   time.Time `json:"created_at"`
-	DeliveredAt time.Time `json:"delivery_at"`
+	Status      string       `json:"status"`
+	CreatedAt   time.Time    `json:"created_at"`
+	DeliveredAt sql.NullTime `json:"delivery_at"`
 }

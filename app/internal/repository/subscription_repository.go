@@ -77,7 +77,7 @@ func (r *subscriptionRepository) Get(ctx context.Context, id int64) (*model.Subs
 
 	err := r.DB.QueryRowContext(
 		ctx,
-		"SELECT id, name, target_url, active FROM subscriptions WHERE id = $1",
+		"SELECT id, name, target_url, active FROM subscriptions WHERE id = $1 and active = true",
 		id,
 	).
 		Scan(
@@ -86,7 +86,7 @@ func (r *subscriptionRepository) Get(ctx context.Context, id int64) (*model.Subs
 			&result.TargetUrl,
 			&result.Active,
 		)
-	if err != nil && errors.Is(err, sql.ErrNoRows) {
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, pkgerrors.Errorf("invalid subscription was sent %d", id)
 	}
 

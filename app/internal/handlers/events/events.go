@@ -46,9 +46,12 @@ func (c *Controller) createEvent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err = c.service.Create(r.Context(), eventDto); err != nil {
+	eventId, err := c.service.Create(r.Context(), eventDto)
+	if err != nil {
 		c.ERROR(w, r, err)
 
 		return
 	}
+
+	c.JSON(w, &dto.CreateEventResponseDto{EventId: eventId}, http.StatusCreated)
 }

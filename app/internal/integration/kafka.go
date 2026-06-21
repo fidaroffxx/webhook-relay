@@ -10,14 +10,22 @@ import (
 	"github.com/sirupsen/logrus"
 )
 
-type Kafka struct {
+type kafkaIntegration struct {
 	kafkaWriters map[string]*kafka.Writer
+	brokers      []string
 }
 
-func NewKafka(config *config.Kafka) *Kafka {
-	addr := fmt.Sprintf("%s:%s", config.Host, config.Port)
+type KafkaIntegration interface {
+	Publish(ctx context.Context, topic string, key, value []byte) error
+	NewReader(topic string) *kafka.Reader
+	Close()
+}
 
-	conn, err := kafka.Dial(config.ConnectionType, fmt.Sprintf("%s:%s", config.Host, config.Port))
+func NewKafka(config *config.Kafka) KafkaIntegration {
+	addr := fmt.Sprintf("%s:%s", config.Host, config.Port)
+	topics := strings.Split(config.Topics, ",")
+
+	conn, err := kafka.Dial(config.ConnectionType, addr)
 	if err != nil {
 		panic(fmt.Sprintf("Failed to connect to Kafka: %v", err))
 	}
@@ -29,7 +37,17 @@ func NewKafka(config *config.Kafka) *Kafka {
 		conn.Broker().Port,
 	)
 
-	topics := strings.Split(config.Topics, ",")
+	brokers := []string{
+		addr,
+	}
+
+	return &kafkaIntegration{
+		kafkaWriters: createWriters(addr, topics),
+		brokers:      brokers,
+	}
+}
+
+func createWriters(addr string, topics []string) map[string]*kafka.Writer {
 	initializedWriters := make(map[string]*kafka.Writer)
 
 	for _, topic := range topics {
@@ -47,12 +65,18 @@ func NewKafka(config *config.Kafka) *Kafka {
 		initializedWriters[topic] = writer
 	}
 
-	return &Kafka{
-		kafkaWriters: initializedWriters,
-	}
+	return initializedWriters
 }
 
-func (k *Kafka) Close() {
+func (k *kafkaIntegration) NewReader(topic string) *kafka.Reader {
+	return kafka.NewReader(kafka.ReaderConfig{
+		Brokers: k.brokers,
+		Topic:   topic,
+		GroupID: fmt.Sprintf("%s-group", topic),
+	})
+}
+
+func (k *kafkaIntegration) Close() {
 	for _, writer := range k.kafkaWriters {
 		if err := writer.Close(); err != nil {
 			logrus.Errorf("Failed to close writer: %v", err)
@@ -60,13 +84,14 @@ func (k *Kafka) Close() {
 	}
 }
 
-func (k *Kafka) Publish(ctx context.Context, topic string, key, value []byte) error {
+func (k *kafkaIntegration) Publish(ctx context.Context, topic string, key, value []byte) error {
 	v, ok := k.kafkaWriters[topic]
 	if !ok {
 		return fmt.Errorf("topic %s does not exist", topic)
 	}
 
 	return v.WriteMessages(ctx, kafka.Message{
+		Key:   key,
 		Value: value,
 	})
 }

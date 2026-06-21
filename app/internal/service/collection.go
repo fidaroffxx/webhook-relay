@@ -9,6 +9,7 @@ type Collection struct {
 	eventsService       EventsService
 	subscriptionService SubscriptionService
 	outboxService       OutboxService
+	deliveryService     DeliveryService
 }
 
 func NewServiceCollection(
@@ -29,6 +30,13 @@ func NewServiceCollection(
 			repositories.GetOutboxRepository(),
 			integration.GetKafka(),
 		),
+
+		deliveryService: NewDeliveryService(
+			repositories.GetProcessedEventsRepository(),
+			repositories.GetEventsRepository(),
+			repositories.GetSubscriptionRepository(),
+			integration.GetKafka(),
+		),
 	}
 }
 
@@ -42,4 +50,8 @@ func (c *Collection) GetSubscriptionService() SubscriptionService {
 
 func (c *Collection) GetOutboxService() OutboxService {
 	return c.outboxService
+}
+
+func (c *Collection) GetDeliveryService() DeliveryService {
+	return c.deliveryService
 }

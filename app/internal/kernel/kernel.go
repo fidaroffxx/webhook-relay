@@ -3,7 +3,6 @@ package kernel
 import (
 	"context"
 	"errors"
-	"log"
 	"net/http"
 	"os/signal"
 	"syscall"
@@ -69,36 +68,43 @@ func (k *Kernel) Serve() {
 	go func() {
 		logrus.Println("starting server")
 		if err := k.serve.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			log.Fatal(err)
+			logrus.Fatal(err)
 		}
 	}()
 
 	go func() {
 		logrus.Println("out box workers started")
 		if err := k.services.GetOutboxService().Run(ctx); err != nil {
-			log.Fatal(err)
+			logrus.Fatal(err)
+		}
+	}()
+
+	go func() {
+		logrus.Println("delivery workers started")
+		if err := k.services.GetDeliveryService().Run(ctx); err != nil {
+			logrus.Fatal(err)
 		}
 	}()
 
 	<-ctx.Done()
 
-	log.Println("Received termination signal, shutting down...")
+	logrus.Println("Received termination signal, shutting down...")
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	err := k.serve.Shutdown(shutdownCtx)
-	if err != nil {
-		log.Printf("Error shutting down server: %v", err)
-	}
-
 	k.serve.RegisterOnShutdown(func() {
-		err = k.db.DB.Close()
+		err := k.db.DB.Close()
 		if err != nil {
-			log.Printf("Error closing database connection: %v", err)
+			logrus.Printf("Error closing database connection: %v", err)
 		}
 
 		k.integration.GetKafka().Close()
 	})
+
+	err := k.serve.Shutdown(shutdownCtx)
+	if err != nil {
+		logrus.Printf("Error shutting down server: %v", err)
+	}
 
 }

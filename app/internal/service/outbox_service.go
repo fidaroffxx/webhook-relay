@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"log"
 	"sync"
 	"time"
 
@@ -19,7 +18,7 @@ const (
 
 type outboxService struct {
 	outboxRepository repository.OutboxRepository
-	kafkaIntegration *integration.Kafka
+	kafkaIntegration integration.KafkaIntegration
 }
 
 type OutboxService interface {
@@ -28,7 +27,7 @@ type OutboxService interface {
 
 func NewOutboxService(
 	outboxRepository repository.OutboxRepository,
-	kafka *integration.Kafka,
+	kafka integration.KafkaIntegration,
 ) OutboxService {
 	return &outboxService{
 		outboxRepository: outboxRepository,
@@ -43,6 +42,8 @@ func (o *outboxService) Run(ctx context.Context) error {
 		wg.Add(1)
 
 		go func(workerIndex int) {
+			defer wg.Done()
+
 			for {
 				logrus.Printf("Running worker %d", workerIndex)
 
@@ -52,7 +53,7 @@ func (o *outboxService) Run(ctx context.Context) error {
 
 				messages, err := o.outboxRepository.GetNew(ctx)
 				if err != nil {
-					log.Printf("Error getting new messages: %v. Worker %d", err, workerIndex)
+					logrus.Printf("Error getting new messages: %v. Worker %d", err, workerIndex)
 					sleepOrExit(ctx, pollInterval)
 
 					continue
@@ -72,13 +73,13 @@ func (o *outboxService) Run(ctx context.Context) error {
 					if err = o.kafkaIntegration.Publish(
 						ctx,
 						kafkaTopic,
-						[]byte(message.ID),
+						[]byte(message.EventID),
 						[]byte(message.EventID),
 					); err != nil {
-						log.Printf("worker %d: publish error: %v", workerIndex, err)
+						logrus.Printf("worker %d: publish error: %v", workerIndex, err)
 
 						if markError := o.outboxRepository.MarkError(ctx, message.ID); markError != nil {
-							log.Printf("worker %d: MarkError error: %v", workerIndex, markError)
+							logrus.Printf("worker %d: MarkError error: %v", workerIndex, markError)
 
 							continue
 						}
@@ -87,12 +88,12 @@ func (o *outboxService) Run(ctx context.Context) error {
 					}
 
 					if err = o.outboxRepository.MarkDone(ctx, message.ID); err != nil {
-						log.Printf("worker %d: MarkDone error: %v", workerIndex, err)
+						logrus.Printf("worker %d: MarkDone error: %v", workerIndex, err)
 
 						continue
 					}
 
-					log.Printf("Mark done: %v", message.ID)
+					logrus.Printf("Mark done: %v", message.ID)
 				}
 			}
 		}(i)
