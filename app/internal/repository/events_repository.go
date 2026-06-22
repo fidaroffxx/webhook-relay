@@ -18,6 +18,7 @@ type eventsRepository struct {
 type EventsRepository interface {
 	Create(ctx context.Context, event *model.Event) (eventId string, err error)
 	MarkDone(ctx context.Context, id string) error
+	MarkFailed(ctx context.Context, id string) error
 	Get(ctx context.Context, eventId string) (event *model.Event, err error)
 }
 
@@ -30,7 +31,20 @@ func NewEventsRepository(db *db.DB) EventsRepository {
 func (r *eventsRepository) MarkDone(ctx context.Context, id string) error {
 	_, err := r.DB.ExecContext(
 		ctx,
-		"UPDATE events SET status = 'done' where id = $1",
+		"UPDATE events SET status = 'done', delivery_at = now() WHERE id = $1",
+		id,
+	)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (r *eventsRepository) MarkFailed(ctx context.Context, id string) error {
+	_, err := r.DB.ExecContext(
+		ctx,
+		"UPDATE events SET status = 'failed' WHERE id = $1",
 		id,
 	)
 	if err != nil {
@@ -45,7 +59,8 @@ func (r *eventsRepository) Get(ctx context.Context, eventId string) (*model.Even
 
 	err := r.DB.QueryRowContext(
 		ctx,
-		"SELECT id, subscriptions_id, event_type, payload, status, created_at, delivery_at FROM events where id = $1",
+		"SELECT id, subscriptions_id, event_type, payload, status, created_at, delivery_at "+
+			"FROM events where id = $1 AND status IN ('new')",
 		eventId,
 	).Scan(
 		&result.ID,

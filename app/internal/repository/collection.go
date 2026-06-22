@@ -9,6 +9,7 @@ type Collection struct {
 	eventsRepository          EventsRepository
 	outboxRepository          OutboxRepository
 	processedEventsRepository ProcessedEventsRepository
+	deliveriesRepository      DeliveriesRepository
 }
 
 func NewRepositoryCollection(db *db.DB) *Collection {
@@ -17,6 +18,7 @@ func NewRepositoryCollection(db *db.DB) *Collection {
 		eventsRepository:          NewEventsRepository(db),
 		outboxRepository:          NewOutboxRepository(db),
 		processedEventsRepository: NewProcessedEventsRepository(db),
+		deliveriesRepository:      NewDeliveriesRepository(db),
 	}
 }
 
@@ -34,4 +36,8 @@ func (c *Collection) GetOutboxRepository() OutboxRepository {
 
 func (c *Collection) GetProcessedEventsRepository() ProcessedEventsRepository {
 	return c.processedEventsRepository
+}
+
+func (c *Collection) GetDeliveriesRepository() DeliveriesRepository {
+	return c.deliveriesRepository
 }

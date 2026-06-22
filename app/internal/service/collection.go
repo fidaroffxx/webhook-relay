@@ -35,6 +35,7 @@ func NewServiceCollection(
 			repositories.GetProcessedEventsRepository(),
 			repositories.GetEventsRepository(),
 			repositories.GetSubscriptionRepository(),
+			repositories.GetDeliveriesRepository(),
 			integration.GetKafka(),
 		),
 	}
