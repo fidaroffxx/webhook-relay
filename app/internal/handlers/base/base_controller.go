@@ -19,7 +19,7 @@ func NewBaseController() *Controller {
 
 func (b *Controller) JSON(w http.ResponseWriter, data any, statusCode int) {
 	w.Header().Add("Content-Type", "application/json")
-
+	w.Header().Add("User-Agent", "webhook-relay/1.0")
 	w.WriteHeader(statusCode)
 
 	jsonBytes, err := json.Marshal(data)
@@ -40,19 +40,25 @@ func (b *Controller) JSON(w http.ResponseWriter, data any, statusCode int) {
 }
 
 func (b *Controller) ERROR(w http.ResponseWriter, r *http.Request, err error) {
-	traceID, _ := r.Context().Value(middleware.RequestIDKey).(string)
+	logrus.WithFields(logrus.Fields{
+		"trace_id": middleware.GetReqID(r.Context()),
+		"method":   r.Method,
+		"path":     r.URL.Path,
+		"layer":    "handler",
+	}).Errorf("%+v", err)
 
 	statusCode := b.parseError(err)
 
 	w.Header().Add("Content-Type", "application/json")
-	w.Header().Add("X-Trace-ID", traceID)
+	w.Header().Add("X-Trace-ID", middleware.GetReqID(r.Context()))
+	w.Header().Add("User-Agent", "webhook-relay/1.0")
 
 	w.WriteHeader(statusCode)
 
 	body, err := json.Marshal(Error{
 		Code:    statusCode,
 		Message: err.Error(),
-		TraceID: traceID,
+		TraceID: middleware.GetReqID(r.Context()),
 	})
 	if err != nil {
 		logrus.Printf("Error marshalling data: %v", err)
@@ -84,5 +90,6 @@ func (b *Controller) parseError(err error) int {
 
 func (b *Controller) STATUS(w http.ResponseWriter, statusCode int) {
 	w.Header().Add("Content-Type", "application/json")
+	w.Header().Add("User-Agent", "webhook-relay/1.0")
 	w.WriteHeader(statusCode)
 }

@@ -10,7 +10,7 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./migrations:/docker-entrypoint-initdb.d:ro
+      - ./app/migrations:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U relay -d relay"]
       interval: 5s
@@ -67,12 +67,22 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
+        set -e
+    
         /opt/kafka/bin/kafka-topics.sh \
           --bootstrap-server kafka:29092 \
           --create --if-not-exists \
           --topic events.pending \
           --partitions 3 \
           --replication-factor 1
+    
+        /opt/kafka/bin/kafka-topics.sh \
+          --bootstrap-server kafka:29092 \
+          --create --if-not-exists \
+          --topic webhook-relay \
+          --partitions 3 \
+          --replication-factor 1
+    
         echo "Topics ready"
     restart: "no"
 

@@ -27,6 +27,7 @@ type Kafka struct {
 	Host           string `env:"KAFKA_HOST"`
 	Port           string `env:"KAFKA_PORT"`
 	ConnectionType string `env:"KAFKA_CONNECTION_TYPE"`
+	Topics         string `env:"KAFKA_TOPICS"`
 }
 
 func NewConfig() *Config {

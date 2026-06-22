@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"github.com/fidaroffxx/webhook-relay/internal/handlers/base"
+	"github.com/fidaroffxx/webhook-relay/internal/handlers/events"
+	"github.com/fidaroffxx/webhook-relay/internal/handlers/subscriptions"
 	projectMiddleware "github.com/fidaroffxx/webhook-relay/internal/middleware"
 	"github.com/fidaroffxx/webhook-relay/internal/service"
 
@@ -8,14 +11,22 @@ import (
 )
 
 type Collection struct {
-	StatusController *Controller
+	EventsController       *events.Controller
+	SubscriptionController *subscriptions.Controller
 }
 
 func NewCollection(collection *service.Collection) *Collection {
 	baseController := base.NewBaseController()
 
 	return &Collection{
-		StatusController: NewController(collection.GetStatusService()),
+		EventsController: events.NewController(
+			baseController,
+			collection.GetEventsService(),
+		),
+		SubscriptionController: subscriptions.NewController(
+			baseController,
+			collection.GetSubscriptionService(),
+		),
 	}
 }
 
