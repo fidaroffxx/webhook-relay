@@ -13,6 +13,7 @@ import (
 	"github.com/fidaroffxx/webhook-relay/internal/integration"
 	"github.com/fidaroffxx/webhook-relay/internal/model"
 	"github.com/fidaroffxx/webhook-relay/internal/repository"
+	"github.com/segmentio/kafka-go"
 	"github.com/sirupsen/logrus"
 )
 
@@ -65,134 +66,9 @@ func (d *deliveryService) Run(ctx context.Context) error {
 
 	for i := range 3 {
 		wg.Add(1)
-
 		go func(readerIndex int) {
-			r := d.kafkaIntegration.NewReader(topicName)
-
-			defer func() {
-				wg.Done()
-				r.Close()
-			}()
-
-			for {
-				if ctx.Err() != nil {
-					return
-				}
-
-				logrus.Printf("Running reader worker %d", readerIndex)
-
-				kafkaMessage, err := r.FetchMessage(ctx)
-				if err != nil {
-					if ctx.Err() != nil {
-						return
-					}
-					logrus.Errorf("Failed to fetch message from kafka: %v", err)
-
-					continue
-				}
-
-				eventId := string(kafkaMessage.Value)
-
-				processed, err := d.processedEventsRepository.GetOrCreate(ctx, eventId, topicName)
-				if err != nil && !errors.Is(err, sql.ErrNoRows) {
-					continue
-				}
-				if processed == nil {
-					var done bool
-					done, err = d.processedEventsRepository.IsProcessed(ctx, topicName, eventId)
-					if err != nil {
-						continue
-					}
-					if done {
-						_ = r.CommitMessages(ctx, kafkaMessage)
-					}
-
-					continue
-				}
-
-				event, err := d.eventsRepository.Get(ctx, eventId)
-				if errors.Is(err, sql.ErrNoRows) {
-					_ = d.processedEventsRepository.MarkDone(ctx, topicName, eventId)
-					_ = r.CommitMessages(ctx, kafkaMessage)
-
-					continue
-				}
-				if err != nil {
-					logrus.Errorf("Failed to fetch event: %v", err)
-
-					continue
-				}
-
-				requestResult := d.DoRequest(ctx, event)
-				httpErr := d.requestError(requestResult)
-
-				status, writeErr := d.writeRequestResult(
-					ctx,
-					requestResult.response,
-					requestResult.duration,
-					eventId,
-					httpErr,
-				)
-				if writeErr != nil {
-					logrus.Errorf("Failed to write delivery result for event %s: %v", eventId, writeErr)
-
-					continue
-				}
-
-				switch status {
-				case doneStatus:
-					if err = d.markDone(ctx, event.ID); err != nil {
-						logrus.Errorf("Failed to mark event done: %v", err)
-						continue
-					}
-
-					if err = r.CommitMessages(ctx, kafkaMessage); err != nil {
-						logrus.Errorf("Failed to commit kafka message: %v", err)
-						continue
-					}
-
-					logrus.Infof("Delivered event %s", event.ID)
-				case retryStatus:
-					if err = d.processedEventsRepository.Republish(ctx, topicName, eventId); err != nil {
-						logrus.Errorf("Failed to republish event: %v", err)
-					}
-
-					if err = d.kafkaIntegration.Publish(
-						ctx,
-						topicName,
-						[]byte(event.ID),
-						[]byte(event.ID),
-					); err != nil {
-						logrus.Errorf("Failed to publish delivery result for event %s: %v", eventId, err)
-					}
-
-					if err = r.CommitMessages(ctx, kafkaMessage); err != nil {
-						logrus.Errorf("Failed to commit kafka message: %v", err)
-						continue
-					}
-
-				case errorStatus:
-					if err = d.eventsRepository.MarkFailed(ctx, event.ID); err != nil {
-						logrus.Errorf("Failed to mark event failed: %v", err)
-
-						continue
-					}
-
-					if err = d.processedEventsRepository.MarkDone(ctx, topicName, eventId); err != nil {
-						logrus.Errorf("Failed to mark processed event done: %v", err)
-
-						continue
-					}
-
-					if err = r.CommitMessages(ctx, kafkaMessage); err != nil {
-						logrus.Errorf("Failed to commit kafka message: %v", err)
-
-						continue
-					}
-
-					logrus.Warnf("Delivery failed permanently for event %s", event.ID)
-				}
-			}
+			defer wg.Done()
+			d.runReaderWorker(ctx, readerIndex)
 		}(i)
 	}
 
@@ -200,6 +76,171 @@ func (d *deliveryService) Run(ctx context.Context) error {
 	wg.Wait()
 
 	return nil
+}
+
+func (d *deliveryService) runReaderWorker(ctx context.Context, readerIndex int) {
+	reader := d.kafkaIntegration.NewReader(topicName)
+	defer reader.Close()
+
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+
+		logrus.Printf("Running reader worker %d", readerIndex)
+
+		msg, err := reader.FetchMessage(ctx)
+		if err != nil {
+			if ctx.Err() != nil {
+				return
+			}
+			logrus.Errorf("Failed to fetch message from kafka: %v", err)
+
+			continue
+		}
+
+		d.handleMessage(ctx, reader, msg)
+	}
+}
+
+func (d *deliveryService) handleMessage(ctx context.Context, reader *kafka.Reader, msg kafka.Message) {
+	eventID := string(msg.Value)
+
+	claimed, commitSkip := d.tryClaimEvent(ctx, eventID)
+	if !claimed {
+		if commitSkip {
+			_ = reader.CommitMessages(ctx, msg)
+		}
+
+		return
+	}
+
+	event, skip, err := d.loadEvent(ctx, eventID)
+	if err != nil {
+		logrus.Errorf("Failed to fetch event: %v", err)
+
+		return
+	}
+	if skip {
+		_ = d.processedEventsRepository.MarkDone(ctx, topicName, eventID)
+		_ = reader.CommitMessages(ctx, msg)
+
+		return
+	}
+
+	status, err := d.deliverEvent(ctx, event, eventID)
+	if err != nil {
+		logrus.Errorf("Failed to write delivery result for event %s: %v", eventID, err)
+
+		return
+	}
+
+	d.finalizeDelivery(ctx, reader, msg, event, eventID, status)
+}
+
+func (d *deliveryService) tryClaimEvent(ctx context.Context, eventID string) (claimed bool, commitSkip bool) {
+	processed, err := d.processedEventsRepository.GetOrCreate(ctx, eventID, topicName)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return false, false
+	}
+	if processed != nil {
+		return true, false
+	}
+
+	done, err := d.processedEventsRepository.IsProcessed(ctx, topicName, eventID)
+	if err != nil {
+		return false, false
+	}
+
+	return false, done
+}
+
+func (d *deliveryService) loadEvent(ctx context.Context, eventID string) (*model.Event, bool, error) {
+	event, err := d.eventsRepository.Get(ctx, eventID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, true, nil
+	}
+	if err != nil {
+		return nil, false, err
+	}
+
+	return event, false, nil
+}
+
+func (d *deliveryService) deliverEvent(ctx context.Context, event *model.Event, eventID string) (string, error) {
+	requestResult := d.DoRequest(ctx, event)
+	httpErr := d.requestError(requestResult)
+
+	return d.writeRequestResult(
+		ctx,
+		requestResult.response,
+		requestResult.duration,
+		eventID,
+		httpErr,
+	)
+}
+
+func (d *deliveryService) finalizeDelivery(
+	ctx context.Context,
+	reader *kafka.Reader,
+	msg kafka.Message,
+	event *model.Event,
+	eventID string,
+	status string,
+) {
+	switch status {
+	case doneStatus:
+		if err := d.markDone(ctx, event.ID); err != nil {
+			logrus.Errorf("Failed to mark event done: %v", err)
+
+			return
+		}
+
+		if err := reader.CommitMessages(ctx, msg); err != nil {
+			logrus.Errorf("Failed to commit kafka message: %v", err)
+
+			return
+		}
+
+		logrus.Infof("Delivered event %s", event.ID)
+	case retryStatus:
+		if err := d.processedEventsRepository.Republish(ctx, topicName, eventID); err != nil {
+			logrus.Errorf("Failed to republish event: %v", err)
+		}
+
+		if err := d.kafkaIntegration.Publish(
+			ctx,
+			topicName,
+			[]byte(event.ID),
+			[]byte(event.ID),
+		); err != nil {
+			logrus.Errorf("Failed to publish delivery result for event %s: %v", eventID, err)
+		}
+
+		if err := reader.CommitMessages(ctx, msg); err != nil {
+			logrus.Errorf("Failed to commit kafka message: %v", err)
+		}
+	case errorStatus:
+		if err := d.eventsRepository.MarkFailed(ctx, event.ID); err != nil {
+			logrus.Errorf("Failed to mark event failed: %v", err)
+
+			return
+		}
+
+		if err := d.processedEventsRepository.MarkDone(ctx, topicName, eventID); err != nil {
+			logrus.Errorf("Failed to mark processed event done: %v", err)
+
+			return
+		}
+
+		if err := reader.CommitMessages(ctx, msg); err != nil {
+			logrus.Errorf("Failed to commit kafka message: %v", err)
+
+			return
+		}
+
+		logrus.Warnf("Delivery failed permanently for event %s", event.ID)
+	}
 }
 
 func (d *deliveryService) markDone(ctx context.Context, eventId string) error {
